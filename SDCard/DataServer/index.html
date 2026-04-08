@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>DataServer v1.1</title>
+
+	<style>
+		body {
+			font-family: monospace;
+			background: #111;
+			color: #eee;
+			padding: 20px;
+		}
+
+		pre {
+			background: #1e1e1e;
+			padding: 15px;
+			border-radius: 10px;
+			font-size: 16px;
+		}
+
+		button {
+			margin-top: 20px;
+			margin-right: 10px;
+			padding: 10px 20px;
+			font-size: 16px;
+			border: none;
+			border-radius: 8px;
+			background: #3a86ff;
+			color: white;
+			cursor: pointer;
+		}
+	</style>
+</head>
+
+<body>
+
+	<h1>DataServer v1.1</h1>
+
+	<pre id="output">Loading...</pre>
+
+	<button onclick="refreshData()">Refresh</button>
+	<button onclick="restartServer()">Restart</button>
+
+	<script>
+		let isRefreshing = false;
+		let isRestarting = false;
+
+		function formatLine(label, value, unit = "") {
+			const labelWidth = 12;
+			let paddedLabel = label.padEnd(labelWidth, ' ');
+			return paddedLabel + ": " + value + (unit ? " " + unit : "");
+		}
+
+		async function loadData() {
+			try {
+				const res = await fetch('/data');
+				const text = await res.text();
+
+				const lines = text.trim().split(/\r?\n/);
+
+				let ipv4List = [];
+				let disks = [];
+				let currentDisk = null;
+				let data = {};
+
+				lines.forEach(line => {
+					let [key, value] = line.split('=');
+					if (!key || !value) return;
+					key = key.trim();
+					value = value.trim();
+
+					if (key === "IPv4") {
+						ipv4List.push(value);
+					} else if (key === "DiskID") {
+						if (currentDisk) disks.push(currentDisk);
+						currentDisk = { DiskID: value };
+					} else if (key === "FreeSpace" || key === "TotalSize") {
+						if (currentDisk) currentDisk[key] = value;
+					} else {
+						data[key] = value;
+					}
+				});
+
+				if (currentDisk) disks.push(currentDisk);
+
+				let output = "";
+
+				// IPv4
+				output += "IPv4".padEnd(12, ' ') + ": " + (ipv4List.length ? ipv4List.join(" | ") : "-") + "\n\n";
+
+				// System info
+				output += formatLine("Time", data.Time || "-") + "\n";
+				output += formatLine("Battery", data.Battery || "-", "%") + "\n";
+				output += formatLine("Uptime", data.Uptime || "-", "h") + "\n";
+				output += formatLine("CPU", data.CPU || "-", "%") + "\n";
+				output += formatLine("Free RAM", data.FreeRAM || "-", "GB") + "\n";
+				output += formatLine("Total RAM", data.TotalRAM || "-", "GB") + "\n";
+
+				// Disks
+				if (disks.length) {
+					output += "\n";
+					disks.forEach(disk => {
+						output += formatLine("Disk", disk.DiskID || "-") + "\n";
+						output += formatLine("Free Space", disk.FreeSpace || "-", "GB") + "\n";
+						output += formatLine("Total Size", disk.TotalSize || "-", "GB") + "\n";
+					});
+				} else {
+					output += "\nDisk        : -\n";
+					output += "Free Space  : - GB\n";
+					output += "Total Size  : - GB\n";
+				}
+
+				document.getElementById('output').textContent = output;
+
+			} catch (err) {
+				console.error(err);
+				document.getElementById('output').textContent = "Error loading data";
+			}
+		}
+
+		async function refreshData() {
+			if (isRefreshing || isRestarting) return;
+			isRefreshing = true;
+			document.getElementById('output').textContent = "Refreshing...";
+			try {
+				await fetch('/refresh');
+				setTimeout(async () => {
+					await loadData();
+					isRefreshing = false;
+				}, 25000);
+			} catch (err) {
+				console.error(err);
+				document.getElementById('output').textContent = "Error refreshing";
+				isRefreshing = false;
+			}
+		}
+
+		function restartServer() {
+			if (isRestarting || isRefreshing) return;
+			isRestarting = true;
+			document.getElementById('output').textContent = "Restarting server...";
+
+			fetch('/restart').catch(err => console.error(err));
+
+			setTimeout(() => {
+				location.reload();
+			}, 55000);
+		}
+
+		loadData();
+	</script>
+
+</body>
+</html>

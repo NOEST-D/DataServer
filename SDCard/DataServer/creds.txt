@@ -1,0 +1,5 @@
+STA_SSID=YourSSID
+STA_PASS=YourPASS
+AP_SSID=DataServer
+AP_PASS=dataserver
+AP_CH=6
